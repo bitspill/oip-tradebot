@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 """Public API"""
 
+from datetime import date
 from flask import Flask, g, request
 import StringIO
 import mysql.connector.pooling
@@ -21,6 +22,12 @@ dbconfig = {
 }
 
 cnxpool = mysql.connector.pooling.MySQLConnectionPool(pool_name = "tradebot-api-pool", pool_size = 5, **dbconfig)
+
+rpc_user = app.config['CURRENCY_B_RPC_USER']
+rpc_password = app.config['CURRENCY_B_RPC_PASSWORD']
+rpc_port = app.config['CURRENCY_B_RPC_PORT']
+
+access = AuthServiceProxy("http://%s:%s@127.0.0.1:%s" % (rpc_user, rpc_password, rpc_port))
 
 def conn():
     return cnxpool.get_connection()
@@ -102,6 +109,42 @@ def depositaddress():
 def flobalance():
     """Return FLO balance"""
     return str(get_flo_balance())
+
+@app.route('/faucet')
+def faucet():
+    """Send 1 FLO to requested address"""
+
+    if 'X-Forwarded-For' in request.headers:
+        remote_addr = request.headers.getlist("X-Forwarded-For")[0].rpartition(' ')[-1]
+    else:
+        remote_addr = request.remote_addr or 'untrackable'
+
+    flo_address = request.args.get('flo_address')
+
+    if flo_address is None:
+        return 'false; No address provided.'
+
+    con = conn()
+    dt = date.today()
+
+    # Check if they've already requested today
+    cur = con.cursor(prepared=True)
+    cur.execute("SELECT * FROM faucet WHERE flo_address = %s AND date_today = %s LIMIT 1;", (flo_address, dt))
+    result = cur.fetchone()
+    if not result:
+        # Send some FLO
+        txidsend = access.sendfrom("faucet", flo_address, 1)
+        result = 'true; %s' % txidsend
+        cur.execute("INSERT INTO faucet (flo_address, remote_addr, date_today, txid_send) VALUES (%s, %s, %s, %s);", (flo_address, remote_addr, dt, txidsend))
+        con.commit()
+    else:
+        # Already sent some FLO today
+        result = 'false; Already sent FLO today.'
+
+    cur.close()
+    con.close()
+
+    return result
 
 if __name__ == "__main__":
 

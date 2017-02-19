@@ -22,3 +22,10 @@ CREATE TABLE action (
     status VARCHAR(128),
     action VARCHAR(128));
 
+CREATE TABLE faucet (
+    id          INTEGER NOT NULL AUTO_INCREMENT,
+    flo_address VARCHAR(64),
+    remote_addr VARCHAR(64),
+    date_today  CHAR(10),
+    txid_send   VARCHAR(128)
+);
